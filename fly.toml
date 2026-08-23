@@ -1,0 +1,29 @@
+# ============================================================
+#  ALPHA NIXUS AFK BOT — Fly.io config
+#  Creator: Deep Mallick (AKA Mr.Mallick)
+#  Deploy:  fly launch --no-deploy   ->   fly deploy
+# ============================================================
+app = "alpha-nixus-bot"
+primary_region = "sin"          # Singapore (India ke paas)
+
+[build]
+
+[env]
+  PORT = "3000"
+  MC_PORT = "25565"
+  MC_VERSION = "1.12.1"
+  BOT_NAME_BASE = "ALPHA_NIXUS"
+  BOT_NAME_COUNT = "5"
+  ROTATE_HOURS = "3"
+  HUMAN_MODE = "true"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false     # ZARURI: bot ko kabhi band mat karo
+  auto_start_machines = true
+  min_machines_running = 1       # ZARURI: hamesha 1 machine chalti rahe
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

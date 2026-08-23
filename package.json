@@ -1,0 +1,17 @@
+{
+  "name": "alpha-nixus-afk-bot",
+  "version": "2.0.0",
+  "description": "24/7 Minecraft AFK bot (1.12.1) with random human-like movement, auto /register + /login, auto reconnect, auto respawn, username rotation and rich Discord webhook logging. Made by Deep Mallick (Mr.Mallick).",
+  "main": "index.js",
+  "scripts": {
+    "start": "node --max-old-space-size=200 index.js",
+    "dev": "node index.js"
+  },
+  "engines": { "node": ">=18" },
+  "keywords": ["minecraft", "afk", "bot", "mineflayer", "1.12.1", "discord-webhook", "24-7", "alpha-nixus"],
+  "author": "Deep Mallick (Mr.Mallick)",
+  "license": "MIT",
+  "dependencies": {
+    "mineflayer": "4.20.1"
+  }
+}
