@@ -35,6 +35,8 @@ const state = {
   dimension: null,
   players: null,
   lastDeathBy: null,
+  authOk: false,
+  joinedAt: null,
 };
 
 let bot = null;
@@ -76,54 +78,126 @@ function makeAuth() {
 
   let done = false;
   let tries = 0;
-  let mode = 'register';
+  let mode = cfg.auth.mode === 'login' ? 'login' : 'register';
+
+  /** chat bhejne ke 2 tareeke — ek fail ho to dusra */
+  function say(cmd) {
+    if (!bot) return;
+    let sent = false;
+    try { bot.chat(cmd); sent = true; } catch (e) {
+      log.warn(`bot.chat() fail: ${e.message}`);
+    }
+    if (!sent) {
+      try {
+        bot._client.write('chat', { message: cmd });
+        log.info('AUTH sent via raw packet fallback');
+      } catch (e2) {
+        log.err(`raw chat bhi fail: ${e2.message}`);
+      }
+    }
+  }
 
   function tick() {
-    if (done || !bot || tries >= cfg.auth.maxRetry) return;
+    if (done || !bot || cfg.auth.mode === 'none') return;
+    if (tries >= cfg.auth.maxRetry) {
+      log.err(`Auth ${tries} baar try kiya, server ne confirm nahi kiya.`);
+      dc.push('error',
+        `**Auth fail** ❌ — ${tries} attempts ke baad bhi login confirm nahi hua.\n` +
+        '➡️ Server console me ye chala do: `authme register ' + state.username + ' <password>`\n' +
+        '➡️ Ya `AUTH_MODE=login` set karke sahi `AUTH_PASSWORD` do', 'crit');
+      return;
+    }
     tries++;
     const cmd = mode === 'register' ? regCmd : logCmd;
-    try { bot.chat(cmd); } catch (_) {}
-    log.info(`AUTH -> ${mask(cmd)} (try ${tries})`);
-    mode = mode === 'register' ? 'login' : 'register';
+    say(cmd);
+    log.info(`AUTH -> ${mask(cmd)} (try ${tries}/${cfg.auth.maxRetry})`);
+
+    // auto mode me register/login alternate karo, warna wahi command repeat
+    if (cfg.auth.mode === 'auto') mode = mode === 'register' ? 'login' : 'register';
+
     timers.auth = setTimeout(tick, cfg.auth.retryMs);
   }
 
   return {
     begin() {
-      done = false; tries = 0; mode = 'register';
+      if (cfg.auth.mode === 'none') {
+        log.info('AUTH_MODE=none — koi auth command nahi bheji jayegi');
+        done = true;
+        return;
+      }
+      done = false;
+      tries = 0;
+      mode = cfg.auth.mode === 'login' ? 'login' : 'register';
       clearTimeout(timers.auth);
       timers.auth = setTimeout(tick, cfg.auth.firstDelayMs);
     },
     stop() { clearTimeout(timers.auth); },
     isDone: () => done,
+
     feed(raw) {
       if (done) return;
       const m = String(raw).toLowerCase();
 
-      if (/(success|logged in|welcome back|authenticated|you are now logged|successfully registered|login successful)/.test(m)) {
+      // ---- SUCCESS ----
+      if (/(logged in|login successful|successful login|successfully registered|registration.*success|welcome back|you have been logged|password.*correct|authenticated)/.test(m)) {
         done = true;
         clearTimeout(timers.auth);
-        log.ok('Auth complete (server confirmed)');
+        log.ok('✅ Auth complete (server confirmed)');
         state.lastEvent = 'logged in';
+        state.authOk = true;
         dc.push('auth', 'Login/Register **successful** ✔️ — bot ab fully active hai', 'good');
         return;
       }
-      if (/(already registered|already exists|use \/login|please login|please, login|type \/login)/.test(m)) {
+
+      // ---- ALREADY REGISTERED -> login ----
+      if (/(already registered|already exists|username.*taken|use \/login|please login|please, login|type \/login|login using|register.*already)/.test(m)) {
         clearTimeout(timers.auth);
         mode = 'login';
-        timers.auth = setTimeout(tick, 1200);
+        timers.auth = setTimeout(tick, 1000);
         return;
       }
-      if (/(not registered|please register|use \/register|type \/register|register first)/.test(m)) {
+
+      // ---- NOT REGISTERED -> register ----
+      if (/(not registered|please register|use \/register|type \/register|register first|register using|you have to register)/.test(m)) {
         clearTimeout(timers.auth);
         mode = 'register';
-        timers.auth = setTimeout(tick, 1200);
+        timers.auth = setTimeout(tick, 1000);
         return;
       }
-      if (/(wrong password|incorrect password|galat password|invalid password)/.test(m)) {
+
+      // ---- WRONG PASSWORD ----
+      if (/(wrong password|incorrect password|invalid password|password.*incorrect|galat password)/.test(m)) {
         clearTimeout(timers.auth);
-        log.err('Password galat hai! AUTH_PASSWORD check karo.');
-        dc.push('error', '**Password galat hai** — `AUTH_PASSWORD` env variable check karo ❌', 'crit');
+        done = true;
+        log.err('❌ PASSWORD GALAT HAI — AUTH_PASSWORD check karo!');
+        dc.push('error',
+          '**PASSWORD GALAT HAI** ❌\n' +
+          `\`${state.username}\` pehle se registered hai par password match nahi hua.\n` +
+          '➡️ Server console: `authme password ' + state.username + ' <naya-password>`\n' +
+          '➡️ Ya `AUTH_PASSWORD` env sahi karo', 'crit');
+        return;
+      }
+
+      // ---- PASSWORD POLICY REJECT ----
+      if (/(password is too short|password.*too long|password.*unsafe|passwords.*not match|password.*not safe|choose a.*password)/.test(m)) {
+        clearTimeout(timers.auth);
+        done = true;
+        log.err('❌ Password server ki policy pass nahi kar raha');
+        dc.push('error',
+          '**Password policy reject** ❌\n' +
+          `Server bola: \`${String(raw).slice(0, 150)}\`\n` +
+          '➡️ `AUTH_PASSWORD` lamba/strong karo (min 8 chars, letters + numbers)', 'crit');
+        return;
+      }
+
+      // ---- CAPTCHA ----
+      if (/(captcha)/.test(m)) {
+        clearTimeout(timers.auth);
+        done = true;
+        log.err('❌ Server captcha maang raha hai — bot ye nahi kar sakta');
+        dc.push('error',
+          '**Captcha required** ❌ — bot solve nahi kar sakta.\n' +
+          '➡️ Server owner ho to AuthMe config me captcha off karo, ya bot ko manually register karo', 'crit');
       }
     },
   };
@@ -174,6 +248,8 @@ function connect() {
     state.online = true;
     state.connects++;
     state.sessionStart = Date.now();
+    state.joinedAt = Date.now();
+    state.authOk = false;
     state.lastEvent = 'joined, authenticating';
     log.ok(`Joined server as ${username}`);
     dc.push('join', `**${username}** server par join ho gaya 🎉`, 'good');
@@ -189,12 +265,33 @@ function connect() {
   });
 
   /* ---- chat / server messages ---- */
+  const chatSample = [];
   bot.on('messagestr', (msg) => {
-    const text = String(msg);
+    const text = String(msg).replace(/\u00a7./g, '').trim();
+    if (!text) return;
+
     auth.feed(text);
     detectDeathMessage(text);
     detectBan(text);
+
+    // Debug: join ke baad server jo bhi bolta hai wo console me dikhao
+    if (cfg.debug.serverChat) {
+      const win = cfg.debug.chatWindowSec;
+      const inWindow = win === 0 || !state.joinedAt || (Date.now() - state.joinedAt) < win * 1000;
+      if (inWindow) {
+        log.dim(`SERVER> ${text.slice(0, 180)}`);
+        if (!state.authOk && chatSample.length < 12) chatSample.push(text.slice(0, 120));
+      }
+    }
   });
+
+  // 40s baad, agar auth nahi hua to server ke messages Discord par bhejo
+  setTimeout(() => {
+    if (!bot || state.authOk || !chatSample.length) return;
+    dc.push('error',
+      '**Auth abhi tak nahi hua** — server ne ye bola tha:\n' +
+      '```\n' + chatSample.join('\n').slice(0, 900) + '\n```', 'warn');
+  }, 40000);
 
   /* ---- death ---- */
   bot.on('death', () => {
@@ -230,6 +327,12 @@ function connect() {
     let note = '';
     if (/already|logged in|in use|duplicate|taken/i.test(txt)) {
       note = `\n➡️ Naam busy tha, ab **${nextName()}** try karenge`;
+    } else if (/login timeout|timeout exceeded/i.test(txt)) {
+      sev = 'crit';
+      note =
+        '\n⏰ **AuthMe login timeout** — bot 60s me login nahi kar paya.\n' +
+        '➡️ Server console me chalao: `authme register ' + state.username + ' <password>`\n' +
+        '➡️ Phir `AUTH_MODE=login` + sahi `AUTH_PASSWORD` set karo';
     } else if (/ban|blacklist/i.test(txt)) {
       sev = 'crit';
       note = '\n🛑 **Lagta hai bot BAN ho gaya** — dusra naam ya server check karo';
