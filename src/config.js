@@ -57,12 +57,21 @@ module.exports = {
   rotateJitterMin: num(process.env.ROTATE_JITTER_MIN, 25),
 
   auth: {
+    // auto = server ka message padh kar khud decide | login | register | none
+    mode: (process.env.AUTH_MODE || 'auto').toLowerCase(),
     password: process.env.AUTH_PASSWORD || 'AlphaNixus@123',
     registerCmd: process.env.REGISTER_CMD || '/register {pass} {pass}',
     loginCmd: process.env.LOGIN_CMD || '/login {pass}',
-    firstDelayMs: num(process.env.AUTH_DELAY_MS, 6000),
-    retryMs: num(process.env.AUTH_RETRY_MS, 12000),
-    maxRetry: num(process.env.AUTH_MAX_RETRY, 4),
+    firstDelayMs: num(process.env.AUTH_DELAY_MS, 4000),
+    retryMs: num(process.env.AUTH_RETRY_MS, 6000),
+    maxRetry: num(process.env.AUTH_MAX_RETRY, 7),
+  },
+
+  // Server ke chat messages console/Discord me mirror karo (debugging ke liye)
+  debug: {
+    serverChat: bool(process.env.LOG_SERVER_CHAT, true),
+    // join ke baad itne second tak chat mirror karo (0 = hamesha)
+    chatWindowSec: num(process.env.LOG_CHAT_WINDOW_SEC, 90),
   },
 
   reconnect: {
