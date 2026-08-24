@@ -130,8 +130,21 @@ cp .env.example .env
 MC_HOST=play.yourserver.net
 MC_PORT=25565
 MC_VERSION=1.12.1
-AUTH_PASSWORD=YourStrongPassword
-DISCORD_WEBHOOK=https://discord.com/api/webhooks/xxxx/yyyy   # optional
+
+AUTH_MODE=auto
+AUTH_PASSWORD=ChangeThisPassword123
+AUTH_DELAY_MS=4000
+AUTH_RETRY_MS=6000
+
+BOT_NAME_BASE=ALPHA_NIXUS
+BOT_NAME_COUNT=5
+ROTATE_HOURS=3
+
+DISCORD_WEBHOOK=https://discord.com/api/webhooks/xxxx/yyyy
+
+HUMAN_MODE=true
+LOG_SERVER_CHAT=true
+TZ_NAME=Asia/Kolkata
 ```
 
 ### Run
